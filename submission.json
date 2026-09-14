@@ -1,0 +1,219 @@
+{
+  "api_key": "IVY26-F487E77DAB9A",
+  "candidate": {
+    "name": "Antigravity Agent",
+    "email": "demo1@ivy.homes",
+    "repo_url": "https://github.com/example/ivy-assignment",
+    "demo_url": "https://example.vercel.app"
+  },
+  "answers": {
+    "total_listing_records": 4100,
+    "unique_properties": 4090,
+    "active_listings": 3233,
+    "corrupt_listing_ids": [
+      "100-4000397",
+      "100-4000449",
+      "100-4000457",
+      "100-4000491",
+      "100-4000738",
+      "100-4002961",
+      "DWE-4000412",
+      "DWE-4001424",
+      "DWE-4001442",
+      "DWE-4002247",
+      "DWE-4002374",
+      "DWE-4002712",
+      "DWE-4003067",
+      "MAG-4000145",
+      "MAG-4000283",
+      "MAG-4001981",
+      "MAG-4002776",
+      "MAG-4003100",
+      "SQU-4000308",
+      "SQU-4000583",
+      "SQU-4001225",
+      "SQU-4002483",
+      "ZER-4000021",
+      "ZER-4001161",
+      "ZER-4001287",
+      "ZER-4001669",
+      "ZER-4001686"
+    ],
+    "total_monthly_rent": 5473000,
+    "avg_price_per_sqft_2bhk": 16068.5,
+    "costliest_project": {
+      "project_id": "P40004",
+      "price_max_inr": 51804321
+    },
+    "listings_last_7_days": 122,
+    "fake_listing_ids": [
+      "100-4001484",
+      "100-4001961",
+      "DWE-4000745",
+      "MAG-4000075",
+      "MAG-4000870",
+      "MAG-4001467",
+      "MAG-4002092",
+      "SQU-4001342",
+      "ZER-4002683"
+    ],
+    "projects_with_wrong_listing_count": 119
+  },
+  "findings": [
+    {
+      "endpoint": "/auth/login",
+      "category": "auth",
+      "documented": "returns 'token' and 'expires_in': 86400, no refresh flow",
+      "actual": "returns 'access_token', 'refresh_token', 'refresh_url', and 'expires_in': 900",
+      "how_found": "Observed the login response body.",
+      "impact": "Authentication fails if relying on 'token' field. Session expires much earlier than expected.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "auth",
+      "documented": "Every request must carry the API key... Append it as a query parameter: ?api_key=...",
+      "actual": "The API key must be sent in the 'X-API-Key' header.",
+      "how_found": "Received 401 error when passing api_key in query parameters.",
+      "impact": "All API calls fail until headers are corrected.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "auth",
+      "documented": "No authentication required for /v1/listings (api_key is sufficient)",
+      "actual": "Requires Bearer token from /auth/login to access /v1/listings.",
+      "how_found": "Received 'missing bearer token - log in at POST /auth/login first' error.",
+      "impact": "Frontend must enforce login before any data can be fetched.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "pagination",
+      "documented": "Collection endpoints take 'page' and 'limit'",
+      "actual": "Collection endpoints use 'offset' and 'limit'. 'page' is completely ignored.",
+      "how_found": "Passing page=1 and page=2 returned the same results. offset=5 returned different results.",
+      "impact": "Infinite loops or duplicated data if relying on the 'page' parameter.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "pagination",
+      "documented": "limit Maximum 200",
+      "actual": "Maximum limit is silently clamped to 50.",
+      "how_found": "Requested limit=200 but results array length was strictly 50.",
+      "impact": "Requires 4x more requests to fetch data than expected.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "pagination",
+      "documented": "Collection responses contain 'page' and 'page_size'",
+      "actual": "These fields are missing (undefined) in the response.",
+      "how_found": "Inspecting the root JSON keys of paginated responses.",
+      "impact": "Frontend pagination logic cannot rely on these fields.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/projects",
+      "category": "units",
+      "documented": "Money: Indian rupees, integer, everywhere in the API",
+      "actual": "project price_min and price_max are floats in Lacs or Crores, not integer rupees.",
+      "how_found": "Observed prices like 1.95 and 66.1 for projects, which are clearly Crores/Lacs, not INR.",
+      "impact": "Prices are drastically misrepresented if treated as raw INR.",
+      "evidence": [
+        "P40001",
+        "P40002"
+      ]
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "duplicates",
+      "documented": "Every listing_id is globally unique, and each listing corresponds to exactly one physical property.",
+      "actual": "Multiple listing_ids correspond to the exact same physical property (same attributes).",
+      "how_found": "Grouped listings by apartment_name, locality, floor, carpet_area and found exact duplicates.",
+      "impact": "Inflates available inventory and confuses users.",
+      "evidence": [
+        "MAG-4001981"
+      ]
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "completeness",
+      "documented": "Returns active sale listings in your city. Inactive, expired and withdrawn listings are excluded server side",
+      "actual": "Returns inactive listings (is_live: false) as well.",
+      "how_found": "Iterated through records and found many with is_live === false.",
+      "impact": "Frontend must manually filter active listings.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "fraud",
+      "documented": "All listings are genuine properties for sale.",
+      "actual": "Some listings exist merely to generate enquiries with unreasonably low prices (fake).",
+      "how_found": "Filtered for extremely low price_per_sqft and found multiple fake listings.",
+      "impact": "Degrades user trust and data quality.",
+      "evidence": [
+        "100-4001484",
+        "MAG-4000075"
+      ]
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "data_quality",
+      "documented": "Data is clean and honest.",
+      "actual": "Contains mathematically impossible properties (negative price, floor > total_floors, carpet_area > super_built_up).",
+      "how_found": "Programmatically verified constraints against all listings.",
+      "impact": "Causes UI bugs or confusing display values if not cleaned.",
+      "evidence": [
+        "100-4000397",
+        "DWE-4001424"
+      ]
+    },
+    {
+      "endpoint": "/v1/listing/{id}",
+      "category": "missing_endpoint",
+      "documented": "GET /v1/listing/{listing_id}",
+      "actual": "Returns 404 Not Found.",
+      "how_found": "Attempted to fetch single listing using documented path.",
+      "impact": "Detail pages will fail to load.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings/{id}",
+      "category": "undocumented_endpoint",
+      "documented": "Not present in docs.",
+      "actual": "This is the correct path for a single listing.",
+      "how_found": "Replaced 'listing' with 'listings' and it succeeded.",
+      "impact": "None, provided you find it.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings/{id}/similar",
+      "category": "missing_endpoint",
+      "documented": "GET /v1/listings/{listing_id}/similar",
+      "actual": "Returns 404 Not Found.",
+      "how_found": "Attempted to fetch similar listings for a valid listing_id.",
+      "impact": "Similar properties feature cannot be implemented server-side.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "timestamps",
+      "documented": "Timestamps | ISO 8601, UTC, Z suffix, everywhere in the API",
+      "actual": "Timestamps lack the Z suffix and are likely in IST based on health endpoint offset.",
+      "how_found": "Observed posted_at missing the Z suffix (e.g. 2026-03-27T20:02:00).",
+      "impact": "Date parsing logic assumes local time instead of UTC, causing timezone bugs.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "completeness",
+      "documented": "'total' is the exact number of records matching your filters.",
+      "actual": "Total is 3840 but 4100 records are retrievable.",
+      "how_found": "Paginating to the end returns more records than the 'total' field indicates.",
+      "impact": "Pagination math (total / limit) will result in missing pages.",
+      "evidence": []
+    }
+  ]
+}
